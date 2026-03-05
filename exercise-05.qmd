@@ -1,0 +1,277 @@
+---
+title: "exercise-05"
+# Week 07 Programming Exercise - Generate Sampling Distributions and CI
+---
+
+# Challenge 1
+
+## Step 1 
+Open the data file
+
+```{r}
+library(tidyverse)
+library(mosaic)
+library(ggplot2)
+library(purrr)
+library(patchwork)
+
+d <- read.csv("https://raw.githubusercontent.com/difiore/ada-datasets/main/IMDB-movies.csv")
+```
+
+##Step 2 
+Filter movies from 1920 to 1979, and movies that are between 1 to 3 h long. Code a new column called "decade
+
+```{r}
+dfilterd <- d %>% filter(startYear >=1920 & startYear <= 1979 &
+                      runtimeMinutes >= 60 & runtimeMinutes <= 180) %>% mutate(decade = case_when(startYear >=1970 ~ "70s", #1st condition overrides the following ones
+                              startYear >=1960 ~ "60s",                                            startYear >=1950 ~ "50s",
+                              startYear >=1940 ~ "40s",                                            startYear >=1930 ~ "30s",
+                              startYear >=1920 ~ "20s",
+                              FALSE ~ NA))
+  
+```
+
+## Step 3 
+Use {ggplot2} (which is part of {tidyverse}) to plot histograms of the distribution of runtimeMinutes for each decade.
+
+```{r}
+runtimePlot <- dfilterd %>% 
+  ggplot(aes(x =runtimeMinutes, group=decade))+
+  geom_histogram()+
+  facet_wrap(.~decade)
+
+runtimePlot
+```
+
+## Step 4 
+Use a one-line statement to calculate the population mean and population standard deviation in runtimeMinutes for each decade and save the results in a new dataframe called results.
+
+```{r}
+averagesummary <- dfilterd %>% 
+  group_by(decade) %>% 
+  summarise(mean = mean(runtimeMinutes),
+            sd = sd(runtimeMinutes),
+            exp.se = sd/sqrt(length(dfilterd$runtimeMinutes)))
+averagesummary
+```
+
+## Step 5 
+Draw a single sample of 100 movies, without replacement, from each decade and calculate the single sample mean and single sample standard deviation in runtimeMinutes for each decades. Recall that your single sample mean for each decade is an estimate of the population mean for each decade.
+
+```{r}
+decades <- unique(as.character(dfilterd$decade))
+
+
+results <- dfilterd %>%
+  group_by(decade) %>%
+  slice_sample(n = 100, replace = FALSE) %>%
+  summarise(
+    mean_runtime = mean(runtimeMinutes, na.rm = TRUE),
+    sd_runtime   = sd(runtimeMinutes, na.rm = TRUE),
+    .groups = "drop")
+
+results
+```
+
+##Step 6 Calculate for each decade the standard error around your estimate of the population mean runtimeMinutes based on the standard deviation and sample size (n=100 movies) of your single sample.
+
+```{r}
+se.results <- results %>% 
+  mutate(se_runtime= sd_runtime/sqrt(100))
+```
+
+## Step 7 
+Compare these estimates to the actual population mean runtimeMinutes for each decade and to the expected SE in the population mean for samples of size 100 based on the known population standard deviation for each decade.
+
+```{r}
+se.results
+```
+
+```{r}
+averagesummary 
+```
+
+The difference between the mean for the population and the single sample (n=100) falls between the expected SE. However the expected SE for the population is substantially smaller than the SE for the single sample estimates.
+
+## Step 8 
+Generate a sampling distribution of mean runtimeMinutes for each decade by \[a\] drawing 1000 random samples of 100 movies from each decade, without replacement, and, for each sample, \[b\] calculating the mean runtimeMinutes and the standard deviation in runtimeMinutes for each decade. Use either a standard for( ){ } loop, the do(reps) \* formulation from {mosaic}, the rerun() function from {purrr}, or the rep_sample_n() workflow from {infer} to generate your these sampling distributions (see Module 16).
+
+```{r}
+#tbl: The data frame (population) to sample from.
+#size: The number of rows (sample size) to select in each sample.
+#replace: Logical (TRUE/FALSE) indicating if sampling should be done with replacement
+
+perm.dataset <- 
+  do(1000)* sample_n(group_by(dfilterd, decade), size = 100, replace = FALSE) 
+
+boot.mean.sd.summary <- perm.dataset %>% 
+  group_by(decade, .index) %>% 
+  summarise (
+    boot.mean = mean(runtimeMinutes),
+    boot.sd = sd(runtimeMinutes),
+    boot.se = boot.sd/sqrt(100))
+  
+
+boot.mean.sd.summary
+```
+
+## Step 9 
+Then, calculate the mean and the standard deviation of the sampling distribution of sample means for each decade (the former should be a very good estimate of the population mean, while the latter is another estimate of the standard error in our estimate of the population mean for a particular sample size) and plot a histogram of the sampling distribution for each decade. What shape does it have?
+
+```{r}
+
+
+hist.plot <- ggplot() +
+  geom_histogram(data = perm.dataset, aes(x = runtimeMinutes)) + 
+  facet_wrap(.~ decade)
+
+hist.plot
+```
+
+Most of this distributions follow a what would seem like a normal distribution but with positive skewdness (tail towards the right side), making the distribution to be assymetrical. therfore, I would say that this is a Gamma distribution.
+
+## Step 10 
+
+Finally, compare the standard error in runtimeMinutes for samples of size 100 from each decade \[1\] as estimated from your first sample of 100 movies, \[2\] as calculated from the known population standard deviations for each decade, and \[3\] as estimated from the sampling distribution of sample means for each decade.
+
+```{r}
+
+population.se <- averagesummary %>% select(decade, exp.se)
+se.100 <- se.results %>% select(decade, se_runtime)
+samplingdist.se <- boot.mean.sd.summary %>% group_by(decade) %>% 
+  summarise(mean(boot.se))
+
+SE.TABLE <- left_join(samplingdist.se, se.100, by = "decade")
+se.table.final <- left_join(SE.TABLE, population.se, by = "decade") %>% 
+  rename(se.sampling.dist = "mean(boot.se)",
+         se.100sample = se_runtime,
+         se.population = exp.se)
+se.table.final
+```
+
+The standard error of the sample distributions and the single samples of 100 movies is very similar to each other. And as expected the SE of the overall population is lower than the SE for the samples drawn for the original population.
+
+# Challenge 2
+
+## Step 1
+Open the dataset
+
+```{r}
+z <- read.csv("https://raw.githubusercontent.com/difiore/ada-datasets/main/zombies.csv")
+```
+
+## Step 2
+
+Calculate the population mean and standard deviation for each quantitative random variable in the dataset (height, weight, age, number of zombies killed, and years of education)
+
+```{r}
+sd_pop <- function(data, vars){
+
+  results <- data.frame(
+    variable = character(),
+    mean = numeric(),
+    sd_pop = numeric())
+
+  for(i in vars){
+
+    variable <- data[[i]]
+    average <- mean(variable, na.rm = TRUE)
+    diff <- variable - average
+    s.size <- length(variable)
+    sd.popu <- sqrt(sum(diff^2) / s.size)
+    results <- rbind(results,
+                     data.frame(variable = i,
+                                mean = average,
+                                sd_pop = sd.popu))
+  }
+  return(results)
+}
+
+vars = c("height","weight","age","zombies_killed","years_of_education")
+
+sd_pop(z,vars)
+```
+
+##Step 3
+Make boxplots of variables by gender
+
+
+```{r}
+# "." is a placeholder meaning - current element in a vector
+#.data[var] = Look inside the dataset and select the column whose name is stored in var
+#.x = variable name
+make_plot <- function(data,var)  {
+  data %>% 
+    ggplot() +                                                    
+    aes(x = gender, y = .data[[var]], color = gender) + 
+  geom_boxplot(width = 0.2, , position = position_dodge(1))+
+  theme_classic()+
+    theme(legend.position = "none")
+}
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+boxplots <- purrr::map(vars, ~ make_plot(data = z, var = .x))
+
+(boxplots[[1]]| boxplots[[2]])/
+(boxplots[[3]]| boxplots[[4]]| boxplots[[5]])
+```
+  
+# Step 4
+Use {ggplot} and make scatterplots of height and weight in relation to age (i.e., use age as the  variable), using different colored points for males versus females. Do these variables seem to be related? In what way?
+
+```{r}
+make_plot.age <- function(data,var)  {
+  data %>% 
+    ggplot() +                                                    
+    aes(x = age, y = .data[[var]], group = as.factor(gender),
+        color = gender) + 
+  geom_point(size = 1.5, shape =20, alpha =0.7)+
+  theme_classic()+
+    theme(legend.position = "none")
+}
+
+vars <- c("height","weight")
+scatterplots <- purrr::map(vars, ~ make_plot.age(data = z, var = .x))
+(scatterplots[[1]]| scatterplots[[2]])
+```
+
+# Step 5
+Using histograms and Q-Q plots, check whether each of the quantitative variables seem to be drawn from a normal distribution. Which seem to be and which do not?
+
+```{r}
+make_plot.histogram <- function(data,var)  {
+  data %>% 
+    ggplot() +                                                    
+    aes(x = .data[[var]]) + 
+  geom_histogram()+
+  theme_classic()+
+    theme(legend.position = "none")
+}
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+histoplots <- purrr::map(vars, ~ make_plot.histogram(data = z, var = .x))
+(histoplots[[1]]| histoplots[[2]])/
+(histoplots[[3]]| histoplots[[4]]| histoplots[[5]])
+```
+
+```{r}
+make_plot.qq <- function(data,var)  {
+  data %>% 
+    ggplot() +                                                    
+    aes(sample = .data[[var]]) + #sample = y
+  geom_qq()+
+  theme_classic()+
+    theme(legend.position = "none")+
+      ylab(var)
+}
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+QQplots <- purrr::map(vars, ~ make_plot.qq(data = z, var = .x))
+(QQplots[[1]]| QQplots[[2]])/
+(QQplots[[3]]| QQplots[[4]]| QQplots[[5]])
+```
+
+The following variables have a normal distribution: height, weight and age. While the number of zombies killed and years of education follow a poisson distribution, given they are not continuous but discrete numerical variables (e.g, counts)
+
+#Step 6
+Now use the sample_n() or slice_sample() function from {dplyr} to sample ONE subset of 50 zombie apocalypse survivors (without replacement) from this population and calculate the mean and sample standard deviation for each variable. Also estimate the standard error for each variable based on this one sample and use that to construct a theoretical 95% confidence interval for each mean. You can use either the standard normal or a Student’s t distribution to derive the critical values needed to calculate the lower and upper limits of the CI.
