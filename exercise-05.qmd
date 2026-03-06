@@ -275,3 +275,158 @@ The following variables have a normal distribution: height, weight and age. Whil
 
 #Step 6
 Now use the sample_n() or slice_sample() function from {dplyr} to sample ONE subset of 50 zombie apocalypse survivors (without replacement) from this population and calculate the mean and sample standard deviation for each variable. Also estimate the standard error for each variable based on this one sample and use that to construct a theoretical 95% confidence interval for each mean. You can use either the standard normal or a Student’s t distribution to derive the critical values needed to calculate the lower and upper limits of the CI.
+
+```{r}
+subset <- sample_n(z, size = 50, replace = FALSE)  
+
+mean.sd.resumen <- function(data, vars){
+
+  results <- data.frame(
+    variable = character(),
+    mean = numeric(),
+    sd_ = numeric())
+
+  for(i in vars){
+
+    variable <- data[[i]]
+    average <- mean(variable, na.rm = TRUE)
+    st.dev <- sd(variable, na.rm = TRUE)
+    se.zombie <- st.dev/sqrt(nrow(data))
+    results <- rbind(results,
+                     data.frame(variable = i,
+                                mean_z = average,
+                                sd_z = average,
+                                se_z = se.zombie))
+  }
+  return(results)
+}
+
+vars = c("height","weight","age","zombies_killed","years_of_education")
+
+one.sample.zombie <- mean.sd.resumen(subset,vars)
+one.sample.zombie
+```
+
+now calculate the confidence intervals
+```{r}
+one.sample.zombie
+ci.95.zombie <- function(data, variables){
+ ci.results <- data.frame(
+   variable = character(),
+   lower = numeric(),
+   upper=numeric()
+ )
+ 
+ for(i in variables){
+   average <- data$mean_z[data$variable == i]
+    st.devi <- data$se_z[data$variable == i]
+
+   variable <- data[[i]]
+   ci <-  average + qnorm(c(0.025, 0.975))*st.devi
+   
+   ci.results <- rbind(ci.results,
+                        data.frame(variable = i,
+                                   lower = ci[1],
+                                   upper = ci[2]))
+ }
+return(ci.results)
+}
+vars = c("height","weight","age","zombies_killed","years_of_education")
+ci.zombie <- ci.95.zombie(one.sample.zombie, vars)
+ci.zombie
+```
+
+#Step7
+Then draw another 199 random samples of 50 zombie apocalypse survivors out of the population and calculate the mean for each of the these samples. Together with the first sample you drew out, you now have a set of 200 means for each variable (each of which is based on 50 observations), which constitutes a sampling distribution for each variable. What are the means and standard deviations of the sampling distribution for each variable? How do the standard deviations of the sampling distribution for each variable compare to the standard errors estimated from your first sample of size 50?
+
+```{r}
+perm.199times <- 
+  do(199)* sample_n(z, size = 50, replace = FALSE)
+perm.dataset <- bind_rows(perm.199times,subset)
+str(perm.dataset)
+
+vars = c("height","weight","age","zombies_killed","years_of_education")
+mean.permuted <- perm.dataset %>% 
+  group_by(.index) %>% 
+  summarise(across(all_of(vars), mean, na.rm=T))
+
+sd.permuted <- perm.dataset %>% 
+  group_by(.index) %>% 
+  summarise(across(all_of(vars), sd, na.rm=T))
+
+mean.permuted 
+sd.permuted
+
+```
+
+```{r}
+one.sample.zombie
+```
+Overall the mean values for the bootstrapped variables is very similar to the values for the standard deviation values are substantially smaller in the bootstrapped estimates in comparison with the single sampled.
+
+## Step 8
+Plot the sampling distributions for each variable mean. What do they look like? Are they normally distributed? What about for those variables that you concluded were not originally drawn from a normal distribution?
+
+```{r}
+permuted_plot.histogram <- function(data,var)  {
+  data %>% 
+    ggplot() +                                                    
+    aes(x = .data[[var]]) + 
+  geom_histogram()+
+  theme_classic()+
+    theme(legend.position = "none")
+}
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+
+per.histoplots <- purrr::map(vars, ~ permuted_plot.histogram(data = mean.permuted, var = .x))
+(per.histoplots[[1]]| per.histoplots[[2]])/
+(per.histoplots[[3]]| per.histoplots[[4]]| per.histoplots[[5]])
+```
+
+The distribution of the mean of the sampling distributions is follows a normal distibution, even fo those samples which original distribution was not normal.
+
+## Step 9
+Construct a 95% confidence interval for each mean directly from the sampling distribution of sample means using the central 95% that distribution (i.e., by setting the lower and upper CI bounds to 2.5% and 97.5% of the way through that distribution).
+
+```{r}
+ci_booted <- function(vars){
+  result.booted.ci <- quantile(vars, probs= c(0.025, 0.975))
+  }
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+
+ci.dataset.sampling.dist <- mean.permuted %>% 
+  summarise(across(all_of(vars), ci_booted)) %>% 
+   mutate(bound = c("lower", "upper"), .before = 1)
+ci.dataset.sampling.dist
+
+```
+
+How do the various 95% CIs you estimated compare to one another (i.e., the CI based on one sample and the corresponding sample standard deviation versus the CI based on simulation where you created a sampling distribution across 200 samples)?
+```{r}
+ci.zombie
+```
+
+The Confidence Intervals for the bootstrapped sampling distribution is similar to the estimates from the single sample. The range of values bewtween CI's is slighly greater for the bootstrapped CI for weight in comparison to the CI estimated for the single sample, however such difference is in the scale of 1 unit.
+
+## Step 10
+Finally, use bootstrapping to generate a 95% confidence interval for each variable mean by resampling 1000 samples, with replacement, from your original sample (i.e., by setting the lower and upper CI bounds to 2.5% and 97.5% of the way through the sampling distribution generated by bootstrapping). How does this compare to the CIs generated in Step 9?
+
+```{r}
+CI.booted <- 
+  do(1000)* sample_n(z, size = 1000, replace = T)
+
+vars <- c("height","weight","age","zombies_killed","years_of_education")
+
+ci.dataset.booted <- CI.booted %>% 
+  summarise(across(all_of(vars), ci_booted))%>% 
+   mutate(bound = c("lower", "upper"), .before = 1)
+ci.dataset.booted
+```
+
+```{r}
+ci.dataset.sampling.dist
+```
+
+The CIs generated via bootstrapped are bigger (i.e., have a greater range within) than the CIs generated from the sampling distributions of the means.
